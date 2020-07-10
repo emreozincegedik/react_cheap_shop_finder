@@ -1,0 +1,22 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon index.js",
+    "client": "cd ../frontend && npm start",
+    "all": "concurrently \"npm start\" \"npm run client\""
+  },
+  "keywords": [],
+  "author": "Emre Özincegedik",
+  "license": "ISC",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.3",
+    "cors": "^2.8.5",
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1",
+    "mysql": "^2.18.1",
+    "node-fetch": "^2.6.0"
+  }
+}

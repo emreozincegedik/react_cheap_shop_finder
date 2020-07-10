@@ -1,0 +1,17 @@
+{
+  "name": "mvc-proje",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "backend": "npm start --prefix backend",
+    "frontend": "npm start --prefix frontend",
+    "all": "concurrently \"npm run backend\" \"npm run frontend\""
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "concurrently": "^5.2.0"
+  }
+}
