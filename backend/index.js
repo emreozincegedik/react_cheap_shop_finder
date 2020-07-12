@@ -1,28 +1,37 @@
+const Scrape = require("./Scrape");
+const Influx = require("influxdb-nodejs");
 const express = require("express");
 const cors = require("cors");
-const mysql = require("mysql");
-
 require("dotenv").config();
-const Scrape = require("./Scrape");
-const { request } = require("express");
+const client = new Influx(process.env.influx);
+const schemaName = "crawl";
+client.schema(schemaName, {
+  query: "string",
+  title: "string",
+  price: "float",
+  img: "string",
+  link: "string",
+  website: "string",
+});
+const fieldSchema = {
+  query: "s",
+  title: "s",
+  price: "f",
+  img: "s",
+  link: "s",
+  website: "s",
+};
+const tagSchema = {};
+client.schema(schemaName, fieldSchema, tagSchema, {
+  // default is false
+  stripUnknown: true,
+});
 
-function ObjToArray(obj) {
-  var newArr = [];
-  obj.forEach((element) => {
-    var arr = Object.values(element);
-    newArr.push(arr);
-  });
-  return newArr;
-}
-function doWeHaveThatWebsite(obj, str) {
-  var exists = false;
-  obj.forEach((element) => {
-    if (element["website"] === str) {
-      exists = true;
-    }
-  });
-  return exists;
-}
+var websites_shop = ["hepsiburada", "n11", "gittigidiyor", "amazon"];
+var price_low = 0;
+var price_high = 99999;
+
+const { request } = require("express");
 function turkishNormalize(str) {
   return str
     .replace(/Ğ/gim, "g")
@@ -37,54 +46,24 @@ function turkishNormalize(str) {
     .replace(/ş/gim, "s")
     .replace(/ı/gim, "i")
     .replace(/ö/gim, "o")
-    .replace(/ç/gim, "c");
+    .replace(/ç/gim, "c")
+    .toLowerCase();
 }
-
-function checkDate(arr) {
-  //if older than a day, return true
-  // console.log(arr);
-  var a = false;
-  try {
-    arr.forEach((element) => {
-      if (
-        (new Date().getTime() - element["date"].getTime()) / 1000 >
-        process.env.date_old
-      ) {
-        //console.log((new Date().getTime() - element["date"].getTime()) / 1000);
-        //older than a day
-        a = true;
-        throw breakException;
-      }
-    });
-  } catch (error) {}
-
-  return a;
-}
-
 const app = express();
 const port = process.env.PORT || 5000;
-
-const con = mysql.createConnection({
-  host: process.env.host,
-  user: process.env.user,
-  password: process.env.pass,
-  database: process.env.db,
-});
 app.listen(port, () => {
   console.log(`Server is running on port: ${port}`);
 });
-
-con.connect(function (err) {
-  if (err) throw err;
-  console.log("Connected to db!");
-});
-
 app.use(cors());
 app.use(express.json());
+const path = require("path");
+app.use(express.static(path.join(__dirname, "build")));
+app.get("/*", function (req, res) {
+  res.sendFile(path.join(__dirname, "build", "index.html"));
+});
 
-websites = ["hepsiburada", "gittigidiyor", "n11", "amazon"];
 app.post("/", (req, res) => {
-  var request = {};
+  var request = { websites: [] };
   if (req.body.query == "" || !("query" in req.body)) {
     res.status(400);
     res.send(`Incorrect post body, include query`);
@@ -95,20 +74,21 @@ app.post("/", (req, res) => {
     request.query = req.body.query.toString();
   }
 
-  websites.forEach((element) => {
+  websites_shop.forEach((element) => {
     if (element in req.body) {
       if (typeof req.body[element] != "boolean") {
         res.status(400);
         res.send(`Incorrect post body, ${element} must be true or false`);
         throw new Error(req.body);
       }
-      request[element] = req.body[element];
+      if (req.body[element]) {
+        request.websites.push(element);
+      }
     } else {
-      request[element] = true;
+      request.websites.push(element);
     }
   });
-  // "asd" -> NaN == "asd"
-  //"123" -> 123 == "123"
+
   if (
     parseInt(req.body.price_high) != req.body.price_high ||
     parseInt(req.body.price_low) != req.body.price_low
@@ -120,108 +100,80 @@ app.post("/", (req, res) => {
   request.price_low = req.body.price_low != null ? req.body.price_low : 0;
   request.price_high =
     req.body.price_high != null ? req.body.price_high : 999999;
-  console.log(request);
-  var val = [];
 
-  for (var key in request) {
-    val.push(
-      typeof request[key] == "boolean"
-        ? request[key]
-          ? key
-          : ""
-        : request[key]
-    );
-  }
-
-  const valString =
-    "query=? and (website in (?,?,?,?)) and (price between ? and ?)";
-
-  con.query(`SELECT * FROM results where ${valString}`, val, function (
-    err,
-    result,
-    fields
-  ) {
-    if (err) throw err;
-    // console.log(fields);
-    // console.log(result);
-    // console.log(
-    //   result.length <= 4,
-    //   request["n11"] && !doWeHaveThatWebsite(result, "n11"),
-    //   request["gittigidiyor"] && !doWeHaveThatWebsite(result, "gittigidiyor"),
-    //   request["hepsiburada"] && !doWeHaveThatWebsite(result, "hepsiburada"),
-    //   request["amazon"] && !doWeHaveThatWebsite(result, "amazon"),
-    //   checkDate(result)
-    // );
-    if (
-      // false
-
-      result.length <= 4 ||
-      (request["n11"] && !doWeHaveThatWebsite(result, "n11")) ||
-      (request["gittigidiyor"] &&
-        !doWeHaveThatWebsite(result, "gittigidiyor")) ||
-      (request["hepsiburada"] && !doWeHaveThatWebsite(result, "hepsiburada")) ||
-      (request["amazon"] && !doWeHaveThatWebsite(result, "amazon")) ||
-      checkDate(result)
-    ) {
-      var promiseArray = [];
-
-      if (request.hepsiburada) promiseArray.push("hepsiburada");
-      if (request.n11) promiseArray.push("n11");
-      if (request.gittigidiyor) promiseArray.push("gittigidiyor");
-      if (request.amazon) promiseArray.push("amazon");
-
-      if (promiseArray.length == 0) {
-        console.log("no website specified");
-        res.status(400);
-        res.send("no website specified");
-        return;
-      }
-      console.log("crawling starts");
-      const scrape = new Scrape(turkishNormalize(request["query"]));
-      scrape.promise_func(promiseArray).then(() => {
-        con.query(`delete from results where ${valString}`, val, function (
-          error_delete,
-          res_delete,
-          fields_delete
-        ) {
-          if (error_delete) throw error_delete;
-          console.log("deleted older queries");
-        });
-        // console.log(scrape.itemList);
-        con.query(
-          `insert into results (query,title,price,img,link,website) values ?`,
-          [ObjToArray(scrape.itemList)],
-          function (error_insert, result_insert, fields_insert) {
-            if (error_insert) throw error_insert;
-            console.log("inserting");
-            console.log(result_insert);
-          }
+  client
+    .query(schemaName)
+    .where("query", turkishNormalize(request.query))
+    .where("website", websites_shop)
+    .where("price", request.price_low, ">=")
+    .where("price", request.price_high, "<=")
+    .then((dbRes) => {
+      if (dbRes.results[0].series != null) {
+        console.log("found on db");
+        // console.log(dbRes.results[0].series[0]);
+        var responseArray = [];
+        const price_col_num = dbRes.results[0].series[0].columns.indexOf(
+          "price"
         );
-        let newList = [];
-        scrape.itemList.forEach((element) => {
-          if (
-            (element.price < request.price_high &&
-              element.price > request.price_low) ||
-            (element.price > request.price_high &&
-              element.price < request.price_low)
-          ) {
-            newList.push(element);
+        const img_col_num = dbRes.results[0].series[0].columns.indexOf("img");
+        const link_col_num = dbRes.results[0].series[0].columns.indexOf("link");
+        const title_col_num = dbRes.results[0].series[0].columns.indexOf(
+          "title"
+        );
+        const website_col_num = dbRes.results[0].series[0].columns.indexOf(
+          "website"
+        );
+        // console.log(request.websites);
+        // console.log(price_col_num);
+        dbRes.results[0].series[0].values.forEach((el) => {
+          if (request.websites.includes(el[website_col_num])) {
+            responseArray.push({
+              img: el[img_col_num],
+              title: el[title_col_num],
+              link: el[link_col_num],
+              price: el[price_col_num],
+              website: el[website_col_num],
+            });
           }
         });
-
-        res.json(newList);
-      });
-    } else {
-      console.log("found existing");
-      // console.log(result);
-      res.json(result);
-    }
-  });
-
-  //console.log("request main page using post");
+        res.json(responseArray);
+        res.status(200);
+        return;
+        console.log(responseArray);
+        // console.log(res.results[0].series[0].values.length);
+      } else {
+        console.log("not on db, starting scrape");
+        const scrape = new Scrape(turkishNormalize(request.query));
+        scrape.promise_func(websites_shop).then(() => {
+          let responseArray = [];
+          scrape.itemList.forEach((el) => {
+            if (
+              ((el.price < req.body.price_high &&
+                el.price > req.body.price_low) ||
+                (el.price > req.body.price_high &&
+                  el.price < req.body.price_low)) &&
+              request.websites.includes(el.website)
+            ) {
+              responseArray.push(el);
+            }
+          });
+          res.json(responseArray);
+          res.status(200);
+          scrape.itemList.forEach((el) => {
+            client
+              .write(schemaName)
+              .tag({})
+              .field(el)
+              .then()
+              .catch(console.error);
+          });
+        });
+      }
+    })
+    .catch(console.error);
 });
 
-app.post("/suggestion", (req, res) => {
+/*app.post("/suggestion", (req, res) => {
   if (!("suggestion" in req.body) || req.body.suggestion == "") {
     res.status(400);
     res.send(`Incorrect post body, include suggestion`);
@@ -248,4 +200,4 @@ app.post("/suggestion", (req, res) => {
       res.json({ message: "suggestion received" });
     }
   );
-});
+});*/
