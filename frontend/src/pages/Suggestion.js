@@ -53,7 +53,7 @@ export class Suggestion extends Component {
         suggestion: suggestion.value == null ? false : suggestion.value,
       }),
     };
-    fetch("http://localhost:5000/suggestion", requestOptions);
+    fetch("/suggestion", requestOptions);
 
     this.handleShow();
 

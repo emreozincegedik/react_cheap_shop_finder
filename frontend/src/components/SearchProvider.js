@@ -68,7 +68,7 @@ export class SearchProvider extends Component {
               }),
             };
 
-            fetch("http://localhost:5000", requestOptions)
+            fetch("/", requestOptions)
               .then((res) => res.text())
               .then((json) => {
                 console.log(JSON.parse(json));
