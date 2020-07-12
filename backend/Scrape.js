@@ -216,8 +216,8 @@ class Scrape {
     };
   }
 }
-var a = new Scrape("xiaomi redmi note 8");
-a.promise_func(["amazon"]).then((arr) =>
-  console.log(a.itemList, a.itemList.length)
-);
+// var a = new Scrape("xiaomi redmi note 8");
+// a.promise_func(["amazon"]).then((arr) =>
+//   console.log(a.itemList, a.itemList.length)
+// );
 module.exports = Scrape;
